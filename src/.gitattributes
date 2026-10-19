@@ -1,0 +1,5 @@
+# Keep every file byte-exact on checkout.  The delivery is verified by sha256
+# and by byte counts, so an end-of-line conversion would invalidate it.
+# Paired with `core.fileMode false`: drvfs reports every file as 0777, and
+# without it `git add` would record mode 100755 for all of them.
+* -text

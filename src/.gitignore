@@ -1,0 +1,8 @@
+# Build products. Everything the build generates lands in build/, which carries
+# its own .gitignore; nothing is written beside the sources.
+build/
+
+# NOT ignored, and deliberately so: tests/test_block.c and
+# tools/calibrate_v.c are sources that happen not to have been committed in the
+# initial import. A blanket `tests/*` or `tools/*` rule here would silently
+# drop them from the history.
