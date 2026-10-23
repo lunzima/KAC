@@ -88,10 +88,9 @@ void kac_init(kac_t *restrict g)
     g->chunk_samples = KAC_CHUNK_SAMPLES;
     /* The searches the run gives up (KAC_QUALITY_DEFAULT, kac_internal.h) and the
      * form every block is sent in (KAC_MS_AUTO). */
-    g->quality      = KAC_QUALITY_DEFAULT;
-    g->ms_mode      = KAC_MS_AUTO;
-    g->neighbor_pct = KAC_SF_NEIGHBOR_PCT;
-    g->report       = 1;
+    g->quality = KAC_QUALITY_DEFAULT;
+    g->ms_mode = KAC_MS_AUTO;
+    g->report  = 1;
     /* Default: per-block VBR at rung KAC_DEFAULT_V over the whole ladder. Any
      * selector clears it: a pinned tier or rate sets KAC_VBR_OFF, kac_set_vbr()
      * overwrites the rung and opens the window. */
@@ -707,49 +706,53 @@ int kac_init_params(kac_t *restrict g)
     {
         /* Resolve the quality level into search settings. The handle is public,
          * so an out-of-range level reads as the widest one. Only level 0 codes a
-         * block per tier; the rest estimate and use measure_fix(). */
+         * block per tier; the rest estimate and use measure_fix(). The two brute
+         * settings are rows past the last level, so one assignment covers them
+         * and a column added here reaches brute as well. */
         static const struct {
             unsigned w;
-            int      ms;
             int      est;
+            int      form;
+            unsigned lag;
             unsigned cand;
-        } lv[KAC_QUALITY_MAX + 1] = {
-            {8u, 1, 0, KAC_PROBE_CAND},
-            {8u, 1, 1, KAC_PROBE_CAND},
-            {6u, 1, 1, KAC_PROBE_CAND},
-            {5u, 1, 1, 8u},
-            {4u, 1, 1, 8u},
-            {3u, 1, 1, 7u},
-            {2u, 1, 1, 6u},
-            {0u, 1, 1, 6u},
-            {0u, 1, 1, 5u},
-            {0u, 0, 1, 5u},
-            {0u, 0, 1, 4u},
+            int      plain;
+            unsigned neighbor;
+            int32_t  fix;
+        } lv[KAC_QUALITY_MAX + 3] = {
+            {8u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
+             KAC_MEASURE_FIX_MDB},
+            {8u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
+             KAC_MEASURE_FIX_MDB},
+            {6u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
+             KAC_MEASURE_FIX_MDB},
+            {5u, 1, 8, 8u, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {4u, 1, 4, 4u, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {3u, 1, 2, 3u, 7u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {2u, 1, 1, 2u, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_FREE, KAC_LAG_NONE, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_FREE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 0u, 1, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {10u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 12u, 0, 50u, 700},
+            {12u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 16u, 0, 100u, 700},
         };
-        unsigned s = (g->quality >= 0 && g->quality <= KAC_QUALITY_MAX) ? (unsigned)g->quality : 0u;
+        unsigned s;
 
-        g->beam_w      = lv[s].w;
-        g->probe_cand  = lv[s].cand;
-        g->ms_search   = lv[s].ms;
-        g->measure_fix = KAC_MEASURE_FIX_MDB;
-        g->est_measure = lv[s].est;
-        if (g->brute_level != 0u) {
-            /* The brute setting replaces every column of the level table and
-             * measures tiers by real coding of the cheapest search. */
-            g->ms_search   = 1;
-            g->est_measure = 0;
-            if (g->brute_level == 1u) {
-                g->beam_w       = 10u;
-                g->probe_cand   = 12u;
-                g->neighbor_pct = 50u;
-                g->measure_fix  = 700;
-            } else {
-                g->beam_w       = 12u;
-                g->probe_cand   = 16u;
-                g->neighbor_pct = 100u;
-                g->measure_fix  = 700;
-            }
-        }
+        if (g->brute_level == 1u)
+            s = KAC_QUALITY_MAX + 1u;
+        else if (g->brute_level == 2u)
+            s = KAC_QUALITY_MAX + 2u;
+        else
+            s = (g->quality >= 0 && g->quality <= KAC_QUALITY_MAX) ? (unsigned)g->quality : 0u;
+
+        g->beam_w       = lv[s].w;
+        g->probe_cand   = lv[s].cand;
+        g->measure_fix  = lv[s].fix;
+        g->est_measure  = lv[s].est;
+        g->form         = lv[s].form;
+        g->beam_lag     = lv[s].lag;
+        g->plain        = lv[s].plain;
+        g->neighbor_pct = lv[s].neighbor;
     }
     g->state = KAC_STATE_READY;
     return 0;
@@ -966,15 +969,35 @@ static void count_slice(const kac_ch *restrict e0, const int16_t *restrict dq,
     }
 }
 
+/* The interior of a scalefactor row: magnitudes form an arithmetic progression
+ * from `base` in steps of `step`, and `recip` divides by that step. A row with
+ * two interior levels or fewer is compared endpoint by endpoint and needs none
+ * of it. Four passes read rows this way, so the arithmetic lives in one place. */
+static void row_params(const int16_t *restrict dq, unsigned nq, int32_t *restrict step,
+                       int32_t *restrict base, int32_t *restrict half, uint32_t *restrict recip)
+{
+    if (nq <= 4u) {
+        *step  = 0;
+        *base  = 0;
+        *half  = 0;
+        *recip = 0u;
+        return;
+    }
+    *step  = (int32_t)dq[4] - dq[2];
+    *base  = (int32_t)dq[2] - *step;
+    *half  = (*step - 1) / 2;
+    *recip = 0xFFFFFFFFu / (uint32_t)*step + 1u;
+}
+
 /* Bounded search along the residual path of one slice at the scalefactor the
  * greedy pass chose. Each sample extends every path into its two nearest levels;
  * the `width` least-error paths survive. Codes come from the trace, `end_out` is
  * the best path's state, and the caller keeps its greedy result unless this
  * returns less error. */
 static int64_t refine_slice(const kac_ch *restrict e0, const int16_t *restrict x, unsigned len,
-                            unsigned width, const int16_t *restrict dq, unsigned w, int cap_rel,
-                            int64_t sse_cap, unsigned char *restrict qrs, kac_ch *restrict end_out,
-                            kac_slice_stat *restrict st)
+                            unsigned width, unsigned lag, const int16_t *restrict dq, unsigned w,
+                            int cap_rel, int64_t sse_cap, unsigned char *restrict qrs,
+                            kac_ch *restrict end_out, kac_slice_stat *restrict st)
 {
     const unsigned nq = 1u << w;
     int32_t        step, base, half;
@@ -990,11 +1013,7 @@ static int64_t refine_slice(const kac_ch *restrict e0, const int16_t *restrict x
     unsigned char trs[KAC_BEAM_NODES];
     unsigned      npath = 1u, tn = 1u, p, w2, i;
 
-    step  = (nq > 4u) ? (int32_t)dq[4] - dq[2] : 0;
-    base  = (nq > 4u) ? (int32_t)dq[2] - step : 0;
-    half  = (nq > 4u) ? (step - 1) / 2 : 0;
-    recip = (nq > 4u) ? 0xFFFFFFFFu / (uint32_t)step + 1u : 0u;
-
+    row_params(dq, nq, &step, &base, &half, &recip);
     bp[0]  = *e0;
     bs[0]  = 0;
     bn[0]  = 0;
@@ -1032,6 +1051,10 @@ static int64_t refine_slice(const kac_ch *restrict e0, const int16_t *restrict x
         npath = keep_paths(bp, bs, bn, cand, csse, cnode, ncand, width, sse_cap);
         if (npath == 0u)
             return -1;
+        /* A lag drops every path but the best, so the ones after it re-widen
+         * from one: less lookahead, and fewer states to carry. */
+        if (lag != 0u && (i + 1u) % lag == 0u)
+            npath = 1u;
     }
     {
         unsigned nd = bn[0];
@@ -1094,11 +1117,7 @@ static int trial_slice(kac_ch *restrict e, const int16_t *restrict x, unsigned l
     uint32_t       recip = 0u;
     unsigned       i;
 
-    step = (np > 2u) ? (int32_t)dq[4] - dq[2] : 0;
-    base = (np > 2u) ? (int32_t)dq[2] - step : 0;
-    half = (np > 2u) ? (step - 1) / 2 : 0;
-    if (np > 2u)
-        recip = 0xFFFFFFFFu / (uint32_t)step + 1u;
+    row_params(dq, nq, &step, &base, &half, &recip);
 
     st->sse       = 0;
     st->clip      = 0;
@@ -1355,8 +1374,9 @@ static void search_beam(kac_t *restrict g, unsigned c, const int16_t *restrict x
         for (j = 0; j < sizeof qrs; j++)
             qrs[j] = 0; /* a padded tail slice stays byte stable */
         r.report = g->report;
-        rsse     = refine_slice(&g->ch[c], x, len, g->beam_w, g->dqt + ((size_t)try_sf[t2] << g->w),
-                                g->w, cap_rel, best->sse, qrs, &rend, &r);
+        rsse     = refine_slice(&g->ch[c], x, len, g->beam_w, g->beam_lag,
+                                g->dqt + ((size_t)try_sf[t2] << g->w), g->w, cap_rel, best->sse, qrs,
+                                &rend, &r);
         if (rsse >= 0 && rsse < best->sse) {
             best->sse       = rsse;
             best->sf        = try_sf[t2];
@@ -1441,6 +1461,96 @@ static void code_channel(kac_t *restrict g, unsigned c, unsigned base, unsigned 
     channel_commit(g, c, &best, e0, base, len, recon, out);
 }
 
+/* One channel of a slice with no search: the row the residual envelope names,
+ * then the nearest level at every sample through the decoder's own step. This
+ * is the encoder reduced to the shape a differential coder has -- predict,
+ * quantise the residual, carry the reconstruction -- with the row standing in
+ * for the step size. The row is signalled rather than adapted, so unlike a
+ * classic coder's step it need not follow from the previous sample. */
+static void code_channel_plain(kac_t *restrict g, unsigned c, unsigned base, unsigned len,
+                               int cap_rel, int recon, uint8_t *restrict out)
+{
+    const int16_t *x  = g->sbuf[c] + base;
+    kac_ch         e0 = g->ch[c];
+    kac_ch         t  = e0;
+    kac_slice_stat st;
+    kac_slice_best best;
+    unsigned char  qrs[64];
+    unsigned       sf, i;
+    int32_t        env = probe_slice(&e0, x, len, KAC_PROBE_POINTS);
+    const int16_t *dq;
+
+    sf = 0;
+    while (sf < 15 && g->rowmax[(unsigned)g->cur_tier - 1u][sf] < env)
+        sf++;
+    /* A padded tail slice stays byte stable. */
+    for (i = 0; i < sizeof qrs; i++)
+        qrs[i] = 0;
+    dq        = g->dqt + ((size_t)sf << g->w);
+    st.report = g->report;
+    trial_slice(&t, x, len, dq, g->w, cap_rel, (int64_t)1 << 62, qrs, &st);
+
+    best_reset(&best);
+    best.sse       = st.sse;
+    best.sf        = sf;
+    best.end       = t;
+    best.clip      = st.clip;
+    best.wlim      = st.wlim;
+    best.pred_over = st.pred_over;
+    if (st.got_snap) {
+        best.snap     = st.snap;
+        best.got_snap = 1;
+    }
+    for (i = 0; i < sizeof best.qrs; i++)
+        best.qrs[i] = qrs[i];
+    channel_commit(g, c, &best, e0, base, len, recon, out);
+}
+
+/* One channel of a slice at a level that refines nothing: the rows the envelope
+ * names are tried in order, each capped by the running best, and the winner is
+ * committed. The search is search_sf_order's; what is gone is the candidate
+ * array the beam reads and the beam call itself, both unreachable once the
+ * width is zero. */
+static void code_channel_rows(kac_t *restrict g, unsigned c, unsigned base, unsigned len,
+                              int cap_rel, int recon, uint8_t *restrict out)
+{
+    const int16_t *x  = g->sbuf[c] + base;
+    kac_ch         e0 = g->ch[c];
+    unsigned char  order[16], qrs[64];
+    kac_slice_stat cand;
+    kac_slice_best best;
+    unsigned       cnt, i, j;
+
+    cnt = make_sf_order(g, probe_slice(&e0, x, len, KAC_PROBE_POINTS), order);
+    best_reset(&best);
+    for (i = 0; i < sizeof qrs; i++)
+        qrs[i] = 0;
+    for (i = 0; i < cnt; i++) {
+        unsigned sf  = order[i];
+        kac_ch   t   = e0;
+        int64_t  cap = (best.sse < 0) ? ((int64_t)1 << 62) : best.sse;
+
+        cand.report = g->report;
+        if (trial_slice(&t, x, len, g->dqt + ((size_t)sf << g->w), g->w, cap_rel, cap, qrs, &cand))
+            continue;
+        if (best.sse < 0 || cand.sse < best.sse) {
+            best.sse       = cand.sse;
+            best.sf        = sf;
+            best.end       = t;
+            best.clip      = cand.clip;
+            best.wlim      = cand.wlim;
+            best.pred_over = cand.pred_over;
+            if (cand.got_snap) {
+                best.snap     = cand.snap;
+                best.got_snap = 1;
+            }
+            for (j = 0; j < sizeof best.qrs; j++)
+                best.qrs[j] = qrs[j];
+        }
+    }
+    channel_commit(g, c, &best, e0, base, len, recon, out);
+}
+
 /* Code one slice of len samples; unused slots keep residual zero. With `recon`,
  * write the decoder's reconstruction back over those samples, which mid/side
  * measurement needs (see tier_measure). */
@@ -1459,8 +1569,16 @@ static int encode_slice(kac_t *restrict g, uint8_t *restrict out, unsigned base,
     if (g->loop_end > g->loop_start && g->loop_start >= pos0 && g->loop_start < pos0 + len)
         cap_rel = (int)(g->loop_start - pos0);
 
-    for (c = 0; c < (unsigned)g->channels; c++)
-        code_channel(g, c, base, len, cap_rel, recon, out + (size_t)c * KAC_SLICE_SIZE);
+    for (c = 0; c < (unsigned)g->channels; c++) {
+        uint8_t *dst = out + (size_t)c * KAC_SLICE_SIZE;
+
+        if (g->plain)
+            code_channel_plain(g, c, base, len, cap_rel, recon, dst);
+        else if (g->beam_w == 0u)
+            code_channel_rows(g, c, base, len, cap_rel, recon, dst);
+        else
+            code_channel(g, c, base, len, cap_rel, recon, dst);
+    }
     g->pos += n;
     g->fill = 0;
     return 0;
@@ -1706,9 +1824,12 @@ typedef struct {
 /* Candidate rule by quality: 1-2 walk the whole list everywhere, 3-4 at
  * T1/T2 (their long slices make probe ranking least reliable), 5-7 walk three,
  * 8 and above take the first. Zero means no cap. Level 0 codes blocks and
- * skips this. */
-static unsigned est_cand_limit(const kac_t *restrict g, int tier)
+ * skips this. A negative `force` keeps this rule; a value at or above zero
+ * replaces it, which is how a form measurement states its own effort. */
+static unsigned est_cand_limit(const kac_t *restrict g, int tier, int force)
 {
+    if (force >= 0)
+        return (unsigned)force;
     if (g->quality <= 2)
         return 0u;
     if (g->quality <= 4)
@@ -1720,8 +1841,8 @@ static unsigned est_cand_limit(const kac_t *restrict g, int tier)
 
 /* The same pass for two channels at once: the two LMS chains are independent,
  * so one loop can advance both and hide the recurrence latency. */
-static void est_slice2(kac_t *restrict pr, unsigned at, unsigned len, int64_t *restrict out0,
-                       int64_t *restrict out1)
+static void est_slice2(kac_t *restrict pr, unsigned at, unsigned len, int form_cand,
+                       int64_t *restrict out0, int64_t *restrict out1)
 {
     unsigned char order[2][64];
     unsigned      n = 1u << (pr->w - 1u);
@@ -1733,7 +1854,7 @@ static void est_slice2(kac_t *restrict pr, unsigned at, unsigned len, int64_t *r
                            order[0]);
     cnt[1] = make_sf_order(pr, probe_slice(&pr->ch[1], pr->sbuf[1] + at, len, KAC_PROBE_POINTS),
                            order[1]);
-    limit  = est_cand_limit(pr, pr->cur_tier);
+    limit  = est_cand_limit(pr, pr->cur_tier, form_cand);
     kmax   = cnt[0] > cnt[1] ? cnt[0] : cnt[1];
     end[0] = pr->ch[0];
     end[1] = pr->ch[1];
@@ -1750,14 +1871,10 @@ static void est_slice2(kac_t *restrict pr, unsigned at, unsigned len, int64_t *r
         for (c = 0; c < 2u; c++) {
             if (k >= cnt[c])
                 continue;
-            dqt[c]  = pr->dqt + ((size_t)order[c][k] << pr->w);
-            e[c]    = pr->ch[c];
-            act[c]  = 1;
-            step[c] = (n > 2u) ? (int32_t)dqt[c][4] - dqt[c][2] : 0;
-            base[c] = (n > 2u) ? (int32_t)dqt[c][2] - step[c] : 0;
-            half[c] = (n > 2u) ? (step[c] - 1) / 2 : 0;
-            if (n > 2u)
-                recip[c] = 0xFFFFFFFFu / (uint32_t)step[c] + 1u;
+            dqt[c] = pr->dqt + ((size_t)order[c][k] << pr->w);
+            e[c]   = pr->ch[c];
+            act[c] = 1;
+            row_params(dqt[c], 2u * n, &step[c], &base[c], &half[c], &recip[c]);
         }
         for (i = 0; i < len && (act[0] || act[1]); i++) {
 #define KAC_EST_STEP(C)                                                                            \
@@ -1800,7 +1917,7 @@ static void est_slice2(kac_t *restrict pr, unsigned at, unsigned len, int64_t *r
 
 /* The approximate slice pass: the same predictor loop and scalefactor
  * candidates as a coding, without the beam, grid walk or packing. */
-static int64_t est_slice(kac_t *restrict pr, unsigned c, unsigned at, unsigned len)
+static int64_t est_slice(kac_t *restrict pr, unsigned c, unsigned at, unsigned len, int form_cand)
 {
     unsigned char order[64];
     unsigned      n = 1u << (pr->w - 1u);
@@ -1811,18 +1928,14 @@ static int64_t est_slice(kac_t *restrict pr, unsigned c, unsigned at, unsigned l
     cnt =
         make_sf_order(pr, probe_slice(&pr->ch[c], pr->sbuf[c] + at, len, KAC_PROBE_POINTS), order);
     best_end = pr->ch[c];
-    limit    = est_cand_limit(pr, pr->cur_tier);
+    limit    = est_cand_limit(pr, pr->cur_tier, form_cand);
     for (k = 0; k < cnt && (limit == 0u || k < limit); k++) {
         const int16_t *dqt = pr->dqt + ((size_t)order[k] << pr->w);
         int64_t        sse = 0;
         int32_t        step, base, half;
         uint32_t       recip = 0u;
 
-        step = (n > 2u) ? (int32_t)dqt[4] - dqt[2] : 0;
-        base = (n > 2u) ? (int32_t)dqt[2] - step : 0;
-        half = (n > 2u) ? (step - 1) / 2 : 0;
-        if (n > 2u)
-            recip = 0xFFFFFFFFu / (uint32_t)step + 1u;
+        row_params(dqt, 2u * n, &step, &base, &half, &recip);
 
         e = pr->ch[c];
         for (i = 0; i < len; i++) {
@@ -1954,7 +2067,8 @@ static void probe_copy(kac_t *restrict pr, const kac_t *restrict g)
  * used to predict the step: T2 to T1 varies with how quiet the material is,
  * and a single assumed step can oscillate between tiers. */
 static int tier_measure(kac_t *restrict g, kac_t *restrict pr, int tier, int ms, int est_ms,
-                        uint8_t *restrict scratch, unsigned len, kac_reading *restrict rd)
+                        int form_cand, uint8_t *restrict scratch, unsigned len,
+                        kac_reading *restrict rd)
 {
     kac_rank weak, strong;
     size_t   at = 0;
@@ -1992,18 +2106,15 @@ static int tier_measure(kac_t *restrict g, kac_t *restrict pr, int tier, int ms,
          * real because it decides the block's bytes. A forced mid/side run
          * estimates after the split, so left/right samples never enter. */
         if (est_reading(g) && (!ms || est_ms)) {
-            /* The paired pass pays off on short candidate lists; the widest
-             * levels keep the per-channel call, where its extra setup costs
-             * more than the overlap saves. */
-            if (pr->channels == 2 && est_cand_limit(g, pr->cur_tier) != 0u) {
+            /* The two channels are independent chains, so one loop advances
+             * both and hides the recurrence latency. */
+            if (pr->channels == 2) {
                 int64_t e0, e1;
 
-                est_slice2(pr, j, take, &e0, &e1);
+                est_slice2(pr, j, take, form_cand, &e0, &e1);
                 e = e0 + e1;
             } else {
-                e = est_slice(pr, 0u, j, take);
-                if (pr->channels == 2)
-                    e += est_slice(pr, 1u, j, take);
+                e = est_slice(pr, 0u, j, take, form_cand);
             }
             /* Merge turns (eM, eS) into (eM+eS, eM-eS): the squared errors add
              * to twice the split-domain sum. Merge clipping is not counted,
@@ -2046,7 +2157,7 @@ static int tier_measure_block(kac_t *restrict g, kac_t *restrict pr, int t, uint
 {
     kac_reading rd;
     int         msm = (g->ms_mode == KAC_MS_MS && g->channels == 2);
-    int         rc  = tier_measure(g, pr, t, msm, msm, out, len, &rd);
+    int         rc  = tier_measure(g, pr, t, msm, msm, -1, out, len, &rd);
 
     if (rc != 0)
         return rc;
@@ -2220,20 +2331,32 @@ static int pick_form(kac_t *restrict g, kac_t *restrict probe, int tier, uint8_t
         *ms = 1;
         return 0;
     }
-    if (g->ms_mode == KAC_MS_AUTO && g->ms_search) {
+    if (g->ms_mode == KAC_MS_AUTO && g->form != KAC_FORM_NONE) {
         kac_reading rd;
         int32_t     base;
+        int         est = est_reading(g);
+        /* The level's form column states what this measurement costs: a
+         * positive value is the candidate rows the estimate walks, and the two
+         * sentinels name the real codings. An estimate is only usable when the
+         * run measures by estimate at all, and a real coding is the only thing
+         * the reuse path may emit. */
+        int est_form  = (g->form >= 1 && g->form <= KAC_FORM_MAX_ROWS) && est;
+        int form_cand = (g->form >= 1 && g->form <= KAC_FORM_MAX_ROWS) ? g->form : -1;
         /* Start at out + 1 so the measurement can be emitted as-is when the
          * run's own search produced it. */
-        int rc = tier_measure(g, probe, tier, 1, 0, out + 1, len, &rd);
+        int rc = tier_measure(g, probe, tier, 1, est_form, form_cand, out + 1, len, &rd);
 
         if (rc != 0)
             return rc;
-        *form_rd       = rd;
-        *form_measured = 1;
+        *form_rd = rd;
+        /* An estimated form writes no bytes and cannot be re-emitted. */
+        *form_measured = est_form ? 0 : 1;
         /* Bring an estimated left/right reading up to a real coding before
-         * comparing, or the margin would be measured from a low baseline. */
-        base = lr + est_shortfall_mdb(g, tier, est_reading(g));
+         * comparing, or the margin would be measured from a low baseline. Two
+         * estimates are already on one scale. */
+        base = lr;
+        if (!est_form)
+            base += est_shortfall_mdb(g, tier, est);
         if (rd.psnr > base + kac_ms_margin_mdb[tier])
             *ms = 1;
     }
@@ -2307,7 +2430,7 @@ static int encode_block(kac_t *restrict g, uint8_t *restrict out, unsigned len,
         g->index_off[k] = (uint32_t)g->data_bytes + 1u; /* first slice, past the tier byte */
     }
 
-    if (g->vbr_mode == KAC_VBR_OFF && (g->ms_mode != KAC_MS_AUTO || !g->ms_search)) {
+    if (g->vbr_mode == KAC_VBR_OFF && (g->ms_mode != KAC_MS_AUTO || g->form == KAC_FORM_NONE)) {
         /* Pinned tier and no form search: neither tier nor form needs a
          * measurement. This is the low-delay path and -q 9 on a pinned tier. */
         tier = g->tier;
@@ -2327,7 +2450,7 @@ static int encode_block(kac_t *restrict g, uint8_t *restrict out, unsigned len,
         if (rc != 0)
             return rc;
     }
-    if (ms && form_measured && g->beam_w == 0u) {
+    if (ms && form_measured && g->form == KAC_FORM_FREE) {
         /* Reuse the measured coding rather than coding the same block again. */
         int64_t  sse0  = g->sse;
         uint32_t clip0 = g->clip;

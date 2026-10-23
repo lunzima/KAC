@@ -47,12 +47,13 @@ typedef struct {
 #define KAC_BEAM_NODES (KAC_MAX_SLICE * KAC_BEAM_WIDTH * 2u + 1u)
 
 /* Encoder search effort: level 0 is hardest. The table in kac_init_params()
- * gives beam width, candidate count, form search and tier-reading kind; levels
- * 1..9 estimate tiers with one approximate pass. */
+ * states every setting a level uses, and the two brute settings are rows of the
+ * same table. Level 0 reads every tier by real coding; the levels above it read
+ * tiers from the approximate pass. */
 #define KAC_QUALITY_MAX 10
 
-/* Default effort. Level 0 measures each tier by real coding; this level reads
- * tiers from the approximate pass and keeps the form measurement. */
+/* Default effort: estimated tier readings, and a channel form estimated over
+ * eight candidate rows. */
 #define KAC_QUALITY_DEFAULT 3
 
 /* Raise a real-coded reading taken with no path search to what a run's search
@@ -75,6 +76,22 @@ static const int32_t kac_est_fixone_mdb[KAC_TIER_MAX]  = {5800, 4000, 3000, 2500
  * is unused). The margin grows with tier because the available advantage
  * shrinks; it stays well below a tier step, so it cannot choose the tier. */
 static const int32_t kac_ms_margin_mdb[KAC_TIER_MAX + 1] = {0, 0, 0, 250, 500, 750, 1000, 1250};
+
+/* Form-measurement cost, and the value is the axis: a positive value up to
+ * KAC_FORM_MAX_ROWS is the number of candidate rows the estimate walks, so
+ * adjacent levels are spaced as finely as the table likes. The sentinels sit
+ * outside that range, at either end of the cost order. Nothing here changes how
+ * the estimator runs, so a level's cost falls whenever its count does. */
+#define KAC_FORM_NONE (-2) /* no form search */
+#define KAC_FORM_FREE (-1) /* measured for real; the measurement is the emission */
+#define KAC_FORM_MAX_ROWS 16
+#define KAC_FORM_SEP 1000 /* measured for real, then the block is coded again */
+
+/* Beam lag in samples: KAC_LAG_WHOLE keeps every path to the end of the slice,
+ * a positive value collapses to the best path that often, and KAC_LAG_NONE
+ * marks a level whose width is zero, so no beam runs. */
+#define KAC_LAG_WHOLE 0u
+#define KAC_LAG_NONE 0xFFFFFFFFu
 
 /* Try a second scalefactor when it is within this percentage of the winner's
  * error; the residual search can change which one wins. */

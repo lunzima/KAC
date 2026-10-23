@@ -842,10 +842,11 @@ static int do_lowdelay(const kac_opts *o, const kac_wav *w, uint32_t frames)
         const char *form_str =
             (w->channels == 1)
                 ? "mono"
-                : (form == KAC_MS_LR ? "left/right"
-                                     : (form == KAC_MS_MS ? "mid/side"
-                                                          : (g.ms_search ? "form measured"
-                                                                         : "form as it arrives")));
+                : (form == KAC_MS_LR
+                       ? "left/right"
+                       : (form == KAC_MS_MS ? "mid/side"
+                                            : (g.form != KAC_FORM_NONE ? "form measured"
+                                                                       : "form as it arrives")));
 
         if (o->brute)
             snprintf(level, sizeof level, "brute %d", o->brute);
@@ -1201,10 +1202,11 @@ static int do_encode(const kac_opts *o)
         if (w.channels == 1)
             fprintf(stderr, "Encoding as %s, %s, %s\n", desc, level, cfg);
         else {
-            const char *form = (o->ms_mode == KAC_MS_LR) ? "left/right"
-                               : (o->ms_mode == KAC_MS_MS)
-                                   ? "mid/side"
-                                   : (g.ms_search ? "form measured" : "form as it arrives");
+            const char *form =
+                (o->ms_mode == KAC_MS_LR) ? "left/right"
+                : (o->ms_mode == KAC_MS_MS)
+                    ? "mid/side"
+                    : (g.form != KAC_FORM_NONE ? "form measured" : "form as it arrives");
 
             fprintf(stderr, "Encoding as %s, %s, %s, %s\n", desc, level, form, cfg);
         }

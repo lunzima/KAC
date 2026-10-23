@@ -450,7 +450,7 @@ static void run_probe_boundary_case(void)
         kac_t    g;
         uint8_t *image;
         size_t   len  = 0;
-        int64_t  want = (k == 0u) ? 615294LL : 36970896798LL;
+        int64_t  want = (k == 0u) ? 640130LL : 34295213926LL;
 
         if (k == 0u)
             gen_probe_quiet(pcm, frames, ch);

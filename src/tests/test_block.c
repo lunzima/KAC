@@ -92,6 +92,37 @@ static unsigned walk_blocks(const uint8_t *img, size_t len, blkref *out, unsigne
     return (cov == total && tb == db) ? n : 0;
 }
 
+/* Two channels with a shared tonal part and independent detail. The shared part
+ * cancels in the side channel and the independent noise does not, so the coded
+ * form carries less error than left/right. The varied fixture above has no such
+ * ordering and cannot make the coded form win. */
+static void gen_correlated(int16_t *pcm, uint32_t frames)
+{
+    uint32_t i, seed = 2463534242u;
+
+    for (i = 0; i < frames; i++) {
+        double t   = (double)i / 44100.0;
+        double com = (sin(2.0 * 3.14159265358979 * 110.0 * t) +
+                      0.7 * sin(2.0 * 3.14159265358979 * 277.0 * t) +
+                      0.4 * sin(2.0 * 3.14159265358979 * 631.0 * t)) *
+                     7000.0;
+        unsigned c;
+
+        for (c = 0; c < 2u; c++) {
+            double n, v;
+
+            seed = seed * 1103515245u + 12345u;
+            n    = ((double)((seed >> 16) & 0x3FFFu) / 16384.0 - 1.0) * 2500.0;
+            v    = com + n;
+            if (v > 32767.0)
+                v = 32767.0;
+            if (v < -32768.0)
+                v = -32768.0;
+            pcm[i * 2u + c] = (int16_t)v;
+        }
+    }
+}
+
 /* Amplitude steps by 12:1 in the middle, so a target that sits anywhere in the
  * ladder has to move the tier between the two halves; the pseudo-random part
  * keeps the material from being so predictable that every tier saturates. */
@@ -485,6 +516,54 @@ int main(void)
             expect((im[7] & KAC_BLOCK_MS) == 0, "and carries no form in the Tier field");
             expect(kacdec_open(&d, im, ln) == KAC_OK, "the left/right file opens");
             free(im);
+        }
+    }
+
+    printf("\n== 2e. an estimated form is never re-emitted ==\n");
+    {
+        /* A measurement's bytes are re-emitted only at a level that does not
+         * refine the winner; a level that refines codes the block again. An
+         * estimated form writes no bytes, so re-emitting one would leave a
+         * one-byte block and the file would not close. Both sides of that
+         * boundary run here, on material the coded form wins. */
+        static const int levels[2] = {3, 7}; /* q3 refines, q7 does not */
+        int16_t         *cpcm      = (int16_t *)malloc((size_t)frames * ch * sizeof(int16_t));
+        unsigned         a;
+
+        expect(cpcm != NULL, "the correlated fixture allocates");
+        if (cpcm) {
+            gen_correlated(cpcm, frames);
+            for (a = 0; a < 2u; a++) {
+                enc_opts fq;
+                uint8_t *imq;
+                size_t   lq = 0;
+                unsigned jq, nq, codedq;
+                kac_t    gq;
+                blkref   bq[64];
+
+                enc_opts_default(&fq);
+                fq.tier         = 3;
+                fq.have_quality = 1;
+                fq.quality      = levels[a];
+                imq             = enc_image(cpcm, frames, ch, 44100, &fq, &lq, &gq);
+                expect(imq != NULL, "q%d encodes the correlated fixture", levels[a]);
+                if (!imq)
+                    continue;
+                nq     = walk_blocks(imq, lq, bq, 64);
+                codedq = 0;
+                for (jq = 0; jq < nq; jq++)
+                    codedq += (unsigned)((imq[KAC_HDR_SIZE + bq[jq].tb] & KAC_BLOCK_MS) != 0);
+                expect(nq > 0, "q%d walks with %u blocks", levels[a], nq);
+                expect(codedq > 0, "q%d picks the coded form (%u of %u blocks)", levels[a], codedq,
+                       nq);
+                expect(decode_seq(imq, lq, out, frames) == (int)frames, "q%d decodes fully",
+                       levels[a]);
+                expect(sse_of(cpcm, out, (size_t)frames * ch) == gq.sse,
+                       "q%d decoder SSE %lld != encoder %lld", levels[a],
+                       (long long)sse_of(cpcm, out, (size_t)frames * ch), (long long)gq.sse);
+                free(imq);
+            }
+            free(cpcm);
         }
     }
 

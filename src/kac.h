@@ -43,9 +43,11 @@ typedef struct {
     int      quality;
     unsigned beam_w;
     unsigned probe_cand;
-    int      ms_search;
-    int      est_measure;
     int      ms_mode;
+    int      est_measure;
+    int      form;     /* form-measurement cost, KAC_FORM_* */
+    unsigned beam_lag; /* KAC_LAG_*: how often the beam collapses */
+    int      plain;    /* no search at all: one row, nearest level */
     int32_t  measure_fix;
     int      report; /* collect clip and limit counters */
 

@@ -4,11 +4,9 @@ Kunkun's Audio Codec: a time domain codec (4th order LMS prediction plus scalar 
 quantization) for wavetable and embedded playback. Zero algorithmic latency, gapless looping at
 arbitrary sample offsets, 16 bit PCM output, C99, no external libraries.
 
-The bit stream is specified in `doc/KAC_SPEC.md`. This file says how to build and use the code.
+The bit stream is specified in `../doc/KAC_SPEC.md`. This file says how to build and use the code.
 
 ## Build
-
-Run the build and test commands below from `src/`.
 
 ```sh
 bash build.sh              # kac and the seven test programs, into build/
@@ -135,28 +133,32 @@ describes the format rather than any one implementation:
 * The search can be given up in steps, and the steps are what a run pays for
   speed. Level 0 runs every search this tree has, and measures a block at every
   tier in the window it opens; the levels above it read those tiers off one
-  approximate pass instead. A run that selects nothing gets `-q 3`. The level
-  sets the search width, the candidate count and whether the channel form is
-  measured:
+  approximate pass instead. A run that selects nothing gets `-q 3`. Four
+  settings make up a level: the beam width, the candidate count, how often the
+  beam collapses, and how the channel form is measured:
 
-  | `-q` | Beam width | Candidates | Form measured |
-  |---:|---:|---:|---|
-  | 0 | 8 | 9 | yes |
-  | 1 | 8 | 9 | yes |
-  | 2 | 6 | 9 | yes |
-  | 3 | 5 | 8 | yes |
-  | 4 | 4 | 8 | yes |
-  | 5 | 3 | 7 | yes |
-  | 6 | 2 | 6 | yes |
-  | 7 | 0 | 6 | yes |
-  | 8 | 0 | 5 | yes |
-  | 9 | 0 | 5 | no |
+  | `-q` | Beam width | Candidates | Beam lag | Channel form |
+  |---:|---:|---:|---:|---|
+  | 0 | 8 | 9 | whole slice | coded |
+  | 1 | 8 | 9 | whole slice | coded |
+  | 2 | 6 | 9 | whole slice | coded |
+  | 3 | 5 | 8 | 8 | estimated over 8 rows |
+  | 4 | 4 | 8 | 4 | estimated over 4 rows |
+  | 5 | 3 | 7 | 3 | estimated over 2 rows |
+  | 6 | 2 | 6 | 2 | estimated over 1 row |
+  | 7 | 0 | 6 | - | coded, and the measurement is the emission |
+  | 8 | 0 | 5 | - | coded, and the measurement is the emission |
+  | 9 | 0 | 5 | - | none: the block is sent in the form it arrived in |
+  | 10 | 0 | - | - | none, and no row search either |
 
-  A beam width of 0 gives the search up: every sample takes its nearest level.
-  Level 9 also sends a block in the form it arrived in. `--brute 1` and
-  `--brute 2` replace the level with a setting past level 0, so `-q` no longer
-  changes any part of the search. A level is settled when the encoder is
-  initialised, `kac_set_quality()` being the same setting for a caller.
+  A beam width of 0 removes the beam, not the row search: levels 7 and 8 still
+  try candidate rows and take the nearest level per sample. Level 10 drops that
+  too, leaving one row from the residual envelope and the nearest level
+  everywhere. The command line stops at 9; level 10 is reachable through
+  `kac_set_quality()`. `--brute 1` and `--brute 2` replace the level with a
+  setting past level 0, so `-q` no longer changes any part of the search. A
+  level is settled when the encoder is initialised, `kac_set_quality()` being
+  the same setting for a caller.
 
 A few common invocations:
 
