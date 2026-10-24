@@ -4,9 +4,11 @@ Kunkun's Audio Codec: a time domain codec (4th order LMS prediction plus scalar 
 quantization) for wavetable and embedded playback. Zero algorithmic latency, gapless looping at
 arbitrary sample offsets, 16 bit PCM output, C99, no external libraries.
 
-The bit stream is specified in `../doc/KAC_SPEC.md`. This file says how to build and use the code.
+The bit stream is specified in `doc/KAC_SPEC.md`. This file says how to build and use the code.
 
 ## Build
+
+The sources sit in `src/`; run the commands below from there.
 
 ```sh
 bash build.sh              # kac and the seven test programs, into build/
@@ -17,8 +19,8 @@ make check                 # full acceptance run (tests, sanitizers, audit, size
 
 Products land in `build/`, which is ignored by git. Flags are
 `-std=c99 -Wall -Wextra -pedantic-errors -O2`; the tree builds without warnings.
-`make format` (or `bash build.sh --format`) reformats the sources with `CLANG_FORMAT`,
-which defaults to `clang-format`.
+`make format` (or `bash build.sh --format`) reformats the sources with
+`CLANG_FORMAT`, which defaults to `clang-format-18`.
 
 ## Command line
 
@@ -97,73 +99,80 @@ NOTES:
   them. --mono is an encode option and is refused with --decode.
 ```
 
-Four limits of this encoder that the specification does not state, because it
-describes the format rather than any one implementation:
+## Tiers a pinned run cannot name
 
-* Tier 1 and tier 7 are not selectable as pinned tiers, deliberately. The
-  tier id is the width: `w = 1`, `n = 60`, `4 + 60*1 = 64`, 1.067 bit/sample for
-  T1, and `w = 7`, `n = 8`, 8.000 bit/sample for T7. Both are tiers of the
-  format, and the decoder accepts them in the header and in a block, but `--tier`
-  and `-b` reach only the five between them; the library's `kac_set_tier()`
-  takes T1 or T7, and `--lowdelay` may name either on a pinned run.
-  T1 spends one bit per sample over sixty samples, which costs far more level
-  than the next tier up on any material a run would be cut from, and T7
-  spends more bit per sample than plain 8 bit PCM. Neither is worth that where a
-  block is merely average, so the per-block rule holds them to a reading other
-  than the block's level: T1 only where even the weakest five per cent of the
-  block reaches the aim, T7 only where the tier below it misses the aim that far
-  in from that tier's strongest end. A block that fails either test takes the
-  neighbouring tier instead, T2 or T6. A run pinned with `--tier` or `-b` names a
-  tier outright, and its blocks take it.
-* Choosing a tier per block costs a few times a pinned tier. The block is
-  measured at several tiers before one is picked; `--tier` and `-b` give a block
-  one tier and measure it at that one, so what a pinned run spends is the
-  measurement of a single tier plus the coding of the block. That is the
-  difference between an encoder that fits the time available on a small processor
-  and one that does not, and the ratio does not get smaller on slower hardware.
-  On a processor without an FPU and with few general-purpose registers -- the
-  class this format is aimed at -- encode with `--tier`, or with `-b`, which is a
-  table lookup; `-V`, `--abr` and the default belong on machines whose encoder
-  time is not scarce. The decoder is unaffected by the choice: it reads the same
-  slices, and decodes two orders of magnitude faster than real time.
-* The encoder has a time budget of its own: 3 s for 10 s of 44.1 kHz stereo,
-  asserted by `test_roundtrip` on the configuration a run gets when it selects
-  nothing. Wall clock depends on the machine, so it is a ceiling and not a
-  measurement, and that test prints the measured figure beside it.
-* The search can be given up in steps, and the steps are what a run pays for
-  speed. Level 0 runs every search this tree has, and measures a block at every
-  tier in the window it opens; the levels above it read those tiers off one
-  approximate pass instead. A run that selects nothing gets `-q 3`. Four
-  settings make up a level: the beam width, the candidate count, how often the
-  beam collapses, and how the channel form is measured:
+Tier 1 and tier 7 are tiers of the format: the decoder accepts them in the header
+and in a block, and `kac_set_tier()` takes either. But `--tier` and `-b` reach
+only the five between them, and `--lowdelay` may name T1 or T7 on a pinned run.
 
-  | `-q` | Beam width | Candidates | Beam lag | Channel form |
-  |---:|---:|---:|---:|---|
-  | 0 | 8 | 9 | whole slice | coded |
-  | 1 | 7 | 9 | whole slice | coded |
-  | 2 | 6 | 9 | whole slice | coded |
-  | 3 | 5 | 8 | whole slice | estimated over 8 rows |
-  | 4 | 4 | 8 | 4 | estimated over 4 rows |
-  | 5 | 3 | 7 | 2 | estimated over 2 rows |
-  | 6 | 2 | 6 | 1 | estimated over 1 row |
-  | 7 | 0 | 6 | - | none: the block is sent in the form it arrived in |
-  | 8 | 0 | 5 | - | none: the block is sent in the form it arrived in |
-  | 9 | 0 | 4 | - | none: the block is sent in the form it arrived in |
-  | 10 | 0 | - | - | none, and no row search either |
+T1 spends 1.067 bit/sample (`w = 1`, `n = 60`, `4 + 60*1 = 64` bits per slice),
+and loses far more level than the next tier up on any material a run would be cut
+from. T7 spends 8.000 (`w = 7`, `n = 8`, 64 bits per slice with four of them
+spare), the same as plain 8-bit PCM. Neither is worth that where a block is merely
+average, so the per-block rule holds them to a reading other than the block's
+level: T1 only where even the weakest five per cent of the block reaches the aim,
+T7 only where the tier below it misses the aim that far in from that tier's
+strongest end. A block that fails either test takes the neighbouring tier
+instead, T2 or T6. A run pinned with `--tier` or `-b` names a tier outright, and
+its blocks take it.
 
-  A beam width of 0 removes the beam, not the row search: levels 7, 8 and 9 still
-  try candidate rows and take the nearest level per sample. Level 10 drops that
-  too, leaving one row from the residual envelope and the nearest level
-  everywhere. The command line stops at 9; level 10 is reachable through
-  `kac_set_quality()`. `--brute 1` and `--brute 2` replace the level with a
-  setting past level 0, so `-q` no longer changes any part of the search. A
-  level is settled when the encoder is initialised, `kac_set_quality()` being
-  the same setting for a caller.
+## Choosing a tier per block
 
-  A level does not choose the quality target: `-V`, `-b`, `--psnr` and `--abr`
-  do. A weaker level reaches the same target with more bits in less time, and
-  each level's reading of a tier carries its own measured offset, so the reading
-  tracks what that level actually delivers.
+Choosing a tier per block costs a few times a pinned tier: the block is measured
+at several tiers before one is picked, while `--tier` and `-b` measure it at one.
+That is the difference between an encoder that fits the time available on a small
+processor and one that does not, and the ratio does not get smaller on slower
+hardware. On a processor without an FPU and with few general-purpose registers --
+the class this format is aimed at -- encode with `--tier`, or with `-b`, which is
+a table lookup; `-V`, `--abr` and the default belong on machines whose encoder
+time is not scarce. The decoder is unaffected by the choice: it reads the same
+slices, and decodes two orders of magnitude faster than real time.
+
+## Encoder time budget
+
+3 s for 10 s of 44.1 kHz stereo, asserted by `test_roundtrip` on the
+configuration a run gets when it selects nothing. Wall clock depends on the
+machine, so it is a ceiling and not a measurement, and that test prints the
+measured figure beside it.
+
+## Quality levels
+
+The search can be given up in steps, and the steps are what a run pays for speed.
+Level 0 runs every search this tree has, and measures a block at every tier in
+the window it opens; the levels above it read those tiers off one approximate
+pass instead. A run that selects nothing gets `-q 3`. Four settings make up a
+level: the beam width, the candidate count, how often the beam collapses, and how
+the channel form is measured:
+
+| `-q` | Beam width | Candidates | Beam lag | Channel form |
+|---:|---:|---:|---:|---|
+| 0 | 8 | 9 | whole slice | coded |
+| 1 | 7 | 9 | whole slice | coded |
+| 2 | 6 | 9 | whole slice | coded |
+| 3 | 5 | 8 | whole slice | estimated over 8 rows |
+| 4 | 4 | 8 | 4 | estimated over 4 rows |
+| 5 | 3 | 7 | 2 | estimated over 2 rows |
+| 6 | 2 | 6 | 1 | estimated over 1 row |
+| 7 | 0 | 6 | - | none: the block is sent in the form it arrived in |
+| 8 | 0 | 5 | - | none: the block is sent in the form it arrived in |
+| 9 | 0 | 4 | - | none: the block is sent in the form it arrived in |
+| 10 | 0 | - | - | none, and no row search either |
+
+A beam width of 0 removes the beam, not the row search: levels 7, 8 and 9 still
+try candidate rows and take the nearest level per sample. Level 10 drops that
+too, leaving one row from the residual envelope and the nearest level
+everywhere. The command line stops at 9; level 10 is reachable through
+`kac_set_quality()`. `--brute 1` and `--brute 2` replace the level with a setting
+past level 0, so `-q` no longer changes any part of the search. A level is
+settled when the encoder is initialised, `kac_set_quality()` being the same
+setting for a caller.
+
+A level does not choose the quality target: `-V`, `-b`, `--psnr` and `--abr` do.
+A weaker level reaches the same target with more bits in less time, and each
+level's reading of a tier carries its own measured offset, so the reading tracks
+what that level actually delivers. On `-V` the brute settings aim above the rung
+instead, by 0.7 dB: a harder search that met the rung exactly would turn its
+extra work into rate rather than level.
 
 A few common invocations:
 
@@ -181,7 +190,7 @@ build/kac --decode m.kac out.wav
 build/kac --decode --loop-count 3 m.kac out.wav # three loop passes
 ```
 
-Everything the tool prints goes to **stderr**, so stdout stays empty and can be redirected
+Everything the tool prints goes to stderr, so stdout stays empty and can be redirected
 freely. A run prints a banner, an `Encoding` / `Decoding` line, one line naming the configuration,
 a progress display (a header printed once, then a status line rewritten in place with a carriage
 return), and a summary. Times are CPU time and `play/CPU` is audio seconds per CPU second. `-S`
@@ -232,8 +241,7 @@ grid makes the same samples code the same way -- and both files must use the sam
 The preamble carries
 `TotalSamples`, so it can only be produced after the last frame: the encoder emits placeholder
 bytes of the same length first, and `kac_write_preamble` returns the final contents to patch in at
-offset 0. A handle that selects nothing encodes the default; `kac_init` sets it and any of
-the selectors replaces it. `kac.h` carries the full declaration set and the per-function detail.
+offset 0. `kac.h` carries the full declaration set and the per-function detail.
 
 ```c
 kacdec_t d;
@@ -315,6 +323,8 @@ file that states it.
 
 ## Tests
 
+From `src/`:
+
 ```sh
 bash tests/run.sh          # functional tests, sanitizers, strict compile, review, footprint
 bash tests/deadcode.sh     # unused code, leftover experiment switches, non-ASCII characters
@@ -328,17 +338,18 @@ ladder-endpoint scan and is not part of `make check`.
 ## Files
 
 ```
-kac.c              command line (encode and decode in one binary)
-kac.h              public interface for both ends
-kac_encode.c       encoder
-kac_decode.c       decoder
-kac_internal.h     tables, predict/step/sat, snapshot layout, byte helpers
-kac_dqt.h          dequantization tables, generated by tools/gen_dqt.py
-wav_io.h           WAV reader and writer
-tools/gen_dqt.py   table generator
-tools/check_dqt.py grid check for the generated tables
-tools/calibrate_v.c  the -V ladder's endpoint scan (not part of make check)
-tests/             test_roundtrip test_loop test_bad test_seek test_select test_block
-                   test_stream
-                   run.sh audit_objdump.py deadcode.sh bench.sh timing.sh
+src/kac.c              command line (encode and decode in one binary)
+src/kac.h              public interface for both ends
+src/kac_encode.c       encoder
+src/kac_decode.c       decoder
+src/kac_internal.h     tables, predict/step/sat, snapshot layout, byte helpers
+src/kac_dqt.h          dequantization tables, generated by tools/gen_dqt.py
+src/wav_io.h           WAV reader and writer
+src/tools/gen_dqt.py   table generator
+src/tools/check_dqt.py grid check for the generated tables
+src/tools/calibrate_v.c  the -V ladder's endpoint scan (not part of make check)
+src/tests/             test_roundtrip test_loop test_bad test_seek test_select test_block
+                       test_stream
+                       run.sh audit_objdump.py deadcode.sh bench.sh timing.sh
+doc/KAC_SPEC.md        the bit stream specification
 ```

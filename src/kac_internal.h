@@ -56,20 +56,17 @@ typedef struct {
  * eight candidate rows. */
 #define KAC_QUALITY_DEFAULT 3
 
-/* Raise a real-coded reading taken with no path search to what a run's search
- * would deliver, in milli-dB. Measured mean, rounded to the nearest 25; the
- * spread across tiers is not corrected. */
-#define KAC_MEASURE_FIX_MDB 650
-
-/* Per-tier correction for approximate readings, in milli-dB, rounded to 50: the
- * offset that makes the reading equal the level a block actually delivers at
- * that tier. One row per quality level, because the emission search differs by
- * level and the offset is a property of that search. Measured block by block on
- * the eight-track set: the reading and the emitted level of every block, per
- * tier, and the mean gap. Level 0's readings come from the cheapest search and
- * its row carries the gap to its own emission; level 10's estimate and emission
- * are the same coding, so its row is zero. */
-static const int32_t kac_est_fix_mdb[KAC_QUALITY_MAX + 1][KAC_TIER_MAX] = {
+/* Per-tier correction for a reading, in milli-dB, rounded to 50: the offset that
+ * makes the reading equal the level a block actually delivers at that tier. One
+ * row per quality level, because the emission search differs by level and the
+ * offset is a property of that search. Measured block by block on the
+ * eight-track set: the reading and the emitted level of every block, per tier,
+ * and the mean gap. Level 0's readings come from the cheapest search and its row
+ * carries the gap to its own emission; level 10's estimate and emission are the
+ * same coding, so its row is zero. The last row is the brute search: both brute
+ * settings read by real coding, and their gaps agree to within 50 mdB at every
+ * tier, so they share it. */
+static const int32_t kac_est_fix_mdb[KAC_QUALITY_MAX + 2][KAC_TIER_MAX] = {
     {1400, 1650, 1050, 700, 550, 450, 300}, /* 0: real coding, cheapest search */
     {1250, 950, 900, 650, 550, 450, 300},   /* 1 */
     {1200, 950, 850, 650, 550, 450, 300},   /* 2 */
@@ -81,6 +78,7 @@ static const int32_t kac_est_fix_mdb[KAC_QUALITY_MAX + 1][KAC_TIER_MAX] = {
     {5500, 2550, 1550, 800, 450, 250, 250}, /* 8 */
     {5650, 2200, 1400, 750, 450, 250, 250}, /* 9 */
     {0, 0, 0, 0, 0, 0, 0},                  /* 10 */
+    {1500, 1750, 1100, 700, 550, 450, 300}, /* brute 1 and brute 2 */
 };
 
 /* Milli-dB a -V level aims below the rung. A weaker search would otherwise spend
@@ -90,6 +88,15 @@ static const int32_t kac_est_fix_mdb[KAC_QUALITY_MAX + 1][KAC_TIER_MAX] = {
  * level to keep the delivered ladder descending. */
 static const int32_t kac_level_aim_mdb[KAC_QUALITY_MAX + 1] = {0,    450,  600, 350,  550, 650,
                                                                1000, 1000, 950, 1300, 1400};
+
+/* Milli-dB the brute settings aim above the rung, the same knob turned the other
+ * way. A brute that met the rung exactly would spend its search on a fraction of
+ * a per cent of rate instead of on level, and its search is worth 20 to 90 mdB
+ * at a pinned tier. A -V rung is a quality target and not a promise, so the
+ * overshoot is legitimate; --psnr names the level outright and brute leaves that
+ * alone. Measured on the eight-track set at -V 5, this puts the two settings
+ * 0.63 dB over level 0 for 2.9 % more rate. */
+#define KAC_BRUTE_AIM_MDB 700
 
 /* Required mid/side advantage over left/right, in milli-dB, per tier (index 0
  * is unused). The margin grows with tier because the available advantage

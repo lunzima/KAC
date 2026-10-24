@@ -710,9 +710,9 @@ int kac_init_params(kac_t *restrict g)
     {
         /* Resolve the quality level into search settings. The handle is public,
          * so an out-of-range level reads as the widest one. Only level 0 codes a
-         * block per tier; the rest estimate and use measure_fix(). The two brute
-         * settings are rows past the last level, so one assignment covers them
-         * and a column added here reaches brute as well. */
+         * block per tier; the rest estimate, and every level corrects its reading
+         * with its own row of kac_est_fix_mdb. The two brute settings are rows
+         * past the last level, so one assignment covers them. */
         static const struct {
             unsigned w;
             int      est;
@@ -721,24 +721,20 @@ int kac_init_params(kac_t *restrict g)
             unsigned cand;
             int      plain;
             unsigned neighbor;
-            int32_t  fix;
         } lv[KAC_QUALITY_MAX + 3] = {
-            {8u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
-             KAC_MEASURE_FIX_MDB},
-            {7u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
-             KAC_MEASURE_FIX_MDB},
-            {6u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
-             KAC_MEASURE_FIX_MDB},
-            {5u, 1, 8, KAC_LAG_WHOLE, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {4u, 1, 4, 4u, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {3u, 1, 2, 2u, 7u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {2u, 1, 1, 1u, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 4u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 0u, 1, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {10u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 12u, 0, 50u, 700},
-            {12u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 16u, 0, 100u, 700},
+            {8u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT},
+            {7u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT},
+            {6u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT},
+            {5u, 1, 8, KAC_LAG_WHOLE, 8u, 0, KAC_SF_NEIGHBOR_PCT},
+            {4u, 1, 4, 4u, 8u, 0, KAC_SF_NEIGHBOR_PCT},
+            {3u, 1, 2, 2u, 7u, 0, KAC_SF_NEIGHBOR_PCT},
+            {2u, 1, 1, 1u, 6u, 0, KAC_SF_NEIGHBOR_PCT},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 6u, 0, KAC_SF_NEIGHBOR_PCT},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 4u, 0, KAC_SF_NEIGHBOR_PCT},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 0u, 1, KAC_SF_NEIGHBOR_PCT},
+            {10u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 12u, 0, 50u},
+            {12u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 16u, 0, 100u},
         };
         unsigned s;
 
@@ -751,7 +747,6 @@ int kac_init_params(kac_t *restrict g)
 
         g->beam_w       = lv[s].w;
         g->probe_cand   = lv[s].cand;
-        g->measure_fix  = lv[s].fix;
         g->est_measure  = lv[s].est;
         g->form         = lv[s].form;
         g->beam_lag     = lv[s].lag;
@@ -1976,20 +1971,23 @@ static const int32_t *est_fix_table(const kac_t *restrict g)
 {
     int q = g->quality;
 
+    if (g->brute_level != 0u)
+        return kac_est_fix_mdb[KAC_QUALITY_MAX + 1];
     if (q < 0 || q > KAC_QUALITY_MAX)
         q = 0;
     return kac_est_fix_mdb[q];
 }
 
-/* Correction applied to a reading: one figure for a real coding, per-tier
- * figures for an approximate pass. */
-/* Milli-dB this level aims below the run's target. Zero off the -V ladder. */
+/* Milli-dB this setting aims below the run's target; negative aims above. Zero
+ * off the -V ladder, where the target is a promise and not a rung. */
 static int32_t ladder_drop_mdb(const kac_t *restrict g)
 {
     int q = g->quality;
 
-    if (!g->ladder || g->brute_level != 0u)
+    if (!g->ladder)
         return 0;
+    if (g->brute_level != 0u)
+        return -KAC_BRUTE_AIM_MDB;
     if (q < 0)
         q = 0;
     if (q > KAC_QUALITY_MAX)
@@ -1997,22 +1995,26 @@ static int32_t ladder_drop_mdb(const kac_t *restrict g)
     return kac_level_aim_mdb[q];
 }
 
-/* Add the level's per-tier correction to a reading, so it predicts what a block
- * actually delivers. A real coding at level 0 reads the cheapest search, and the
- * gap to the emission is per tier, so it takes the table like any other level.
- * The brute settings are past every level and carry their own scalar. */
-static int32_t measure_fix(const kac_t *restrict g, int tier)
+/* Column of kac_est_fix_mdb for a tier; a tier outside the format reads its
+ * nearest end. */
+static int fix_index(int tier)
 {
-    int ti;
+    int ti = tier - KAC_TIER_MIN;
 
-    if (g->brute_level != 0u)
-        return g->measure_fix;
-    ti = tier - KAC_TIER_MIN;
     if (ti < 0)
         ti = 0;
     if (ti > KAC_TIER_MAX - KAC_TIER_MIN)
         ti = KAC_TIER_MAX - KAC_TIER_MIN;
-    return est_fix_table(g)[ti];
+    return ti;
+}
+
+/* Add the level's per-tier correction to a reading, so it predicts what a block
+ * actually delivers. Level 0 and the brute settings read by real coding, and the
+ * gap to their own emission is per tier there too, so every level takes the
+ * table. */
+static int32_t measure_fix(const kac_t *restrict g, int tier)
+{
+    return est_fix_table(g)[fix_index(tier)];
 }
 
 /* Offset carried by a real coding's reading at an estimated level: measure_fix()
@@ -2020,16 +2022,7 @@ static int32_t measure_fix(const kac_t *restrict g, int tier)
  * the same one before the two forms are compared. */
 static int32_t est_shortfall_mdb(const kac_t *restrict g, int tier, int estimated)
 {
-    int ti;
-
-    if (!estimated)
-        return 0;
-    ti = tier - KAC_TIER_MIN;
-    if (ti < 0)
-        ti = 0;
-    if (ti > KAC_TIER_MAX - KAC_TIER_MIN)
-        ti = KAC_TIER_MAX - KAC_TIER_MIN;
-    return est_fix_table(g)[ti];
+    return estimated ? est_fix_table(g)[fix_index(tier)] : 0;
 }
 
 /* Fold the weakest and strongest slice rankings into band and gate readings.
@@ -2357,14 +2350,13 @@ static int pick_form(kac_t *restrict g, kac_t *restrict probe, int tier, uint8_t
         int32_t     base;
         int         est = est_reading(g);
         /* The level's form column states what this measurement costs: a
-         * positive value is the candidate rows the estimate walks, and the two
-         * sentinels name the real codings. An estimate is only usable when the
-         * run measures by estimate at all, and a real coding is the only thing
-         * the reuse path may emit. */
+         * positive value is the candidate rows the estimate walks, and
+         * KAC_FORM_SEP is a real coding. An estimate is only usable when the
+         * run measures by estimate at all. */
         int est_form  = (g->form >= 1 && g->form <= KAC_FORM_MAX_ROWS) && est;
         int form_cand = (g->form >= 1 && g->form <= KAC_FORM_MAX_ROWS) ? g->form : -1;
-        /* Start at out + 1 so the measurement can be emitted as-is when the
-         * run's own search produced it. */
+        /* The measurement writes its slices past the tier byte. The block is
+         * coded again in the chosen form, so these bytes are scratch. */
         int rc = tier_measure(g, probe, tier, 1, est_form, form_cand, out + 1, len, &rd);
 
         if (rc != 0)
@@ -2447,8 +2439,9 @@ static int encode_block(kac_t *restrict g, uint8_t *restrict out, unsigned len,
     }
 
     if (g->vbr_mode == KAC_VBR_OFF && (g->ms_mode != KAC_MS_AUTO || g->form == KAC_FORM_NONE)) {
-        /* Pinned tier and no form search: neither tier nor form needs a
-         * measurement. This is the low-delay path and -q 9 on a pinned tier. */
+        /* Pinned tier with neither tier nor form left to measure: the form is
+         * forced by -m, or the level's form column is none. This is the
+         * low-delay path. */
         tier = g->tier;
         ms   = (g->channels == 2 && g->ms_mode == KAC_MS_MS) ? 1 : 0;
         if (kac_use_tier(g, tier) != 0)

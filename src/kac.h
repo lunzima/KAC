@@ -48,8 +48,7 @@ typedef struct {
     int      form;     /* form-measurement cost, KAC_FORM_* */
     unsigned beam_lag; /* KAC_LAG_*: how often the beam collapses */
     int      plain;    /* no search at all: one row, nearest level */
-    int32_t  measure_fix;
-    int      report; /* collect clip and limit counters */
+    int      report;   /* collect clip and limit counters */
 
     /* per-block control and readings */
     int      vbr_mode;
