@@ -91,10 +91,10 @@ static const int32_t kac_level_aim_mdb[KAC_QUALITY_MAX + 1] = {0,    450,  600, 
 
 /* Milli-dB the brute settings aim above the rung, the same knob turned the other
  * way. A brute that met the rung exactly would spend its search on a fraction of
- * a per cent of rate instead of on level, and its search is worth 20 to 90 mdB
- * at a pinned tier. A -V rung is a quality target and not a promise, so the
- * overshoot is legitimate; --psnr names the level outright and brute leaves that
- * alone. Measured on the eight-track set at -V 5, this puts both settings
+ * a per cent of rate instead of on level, and its search is worth under a tenth
+ * of a dB at a pinned tier. A -V rung is a quality target and not a promise, so
+ * the overshoot is legitimate; --psnr names the level outright and brute leaves
+ * that alone. Measured on the eight-track set at -V 5, this puts both settings
  * 0.27 dB over level 0 for 1.1 % more rate. */
 #define KAC_BRUTE_AIM_MDB 300
 
