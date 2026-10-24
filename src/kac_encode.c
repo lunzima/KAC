@@ -709,10 +709,11 @@ int kac_init_params(kac_t *restrict g)
     g->w_limit       = 0;
     {
         /* Resolve the quality level into search settings. The handle is public,
-         * so an out-of-range level reads as the widest one. Only level 0 codes a
-         * block per tier; the rest estimate, and every level corrects its reading
-         * with its own row of kac_est_fix_mdb. The two brute settings are rows
-         * past the last level, so one assignment covers them. */
+         * so an out-of-range level reads as the widest one. Levels 1 to 10 read
+         * their tiers from one approximate pass; level 0 and the brute settings
+         * code a block per tier, and every level corrects its reading with its
+         * own row of kac_est_fix_mdb. The two brute settings are rows past the
+         * last level, so one assignment covers them. */
         static const struct {
             unsigned w;
             int      est;
@@ -2022,7 +2023,7 @@ static int32_t measure_fix(const kac_t *restrict g, int tier)
  * the same one before the two forms are compared. */
 static int32_t est_shortfall_mdb(const kac_t *restrict g, int tier, int estimated)
 {
-    return estimated ? est_fix_table(g)[fix_index(tier)] : 0;
+    return estimated ? measure_fix(g, tier) : 0;
 }
 
 /* Fold the weakest and strongest slice rankings into band and gate readings.

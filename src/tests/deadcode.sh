@@ -36,10 +36,16 @@ echo "=== 3. non ASCII characters in the delivered tree ==="
 # Every file, not a list of suffixes: the rule is about the delivered tree, and
 # a suffix list would miss whatever carries none. Only the two directories that
 # are not part of it are stepped over.
-if grep -rIlP '[^\x00-\x7F]' . --exclude-dir=.git --exclude-dir=build; then
+if bad=$(LC_ALL=C grep -rIl '[^[:print:][:space:]]' . --exclude-dir=.git --exclude-dir=build); then
     echo "  FAIL: non ASCII content found"
+    printf '%s\n' "$bad" | head -20
 else
-    echo "  none"
+    rc=$?
+    if [ "$rc" -gt 1 ]; then
+        echo "  FAIL: the scan failed (grep exit $rc)"
+    else
+        echo "  none"
+    fi
 fi
 
 echo
