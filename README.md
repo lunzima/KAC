@@ -171,7 +171,7 @@ A level does not choose the quality target: `-V`, `-b`, `--psnr` and `--abr` do.
 A weaker level reaches the same target with more bits in less time, and each
 level's reading of a tier carries its own measured offset, so the reading tracks
 what that level actually delivers. On `-V` the brute settings aim above the rung
-instead, by 0.7 dB: a harder search that met the rung exactly would turn its
+instead, by 0.3 dB: a harder search that met the rung exactly would turn its
 extra work into rate rather than level.
 
 A few common invocations:
