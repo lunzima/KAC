@@ -290,7 +290,8 @@ int main(void)
         }
     }
 
-    { /* A rung target must produce exactly the file -V n produces. */
+    { /* At level 0 the ladder asks for no concession, so a rung target must
+       * produce exactly the file -V n produces. */
         int n;
         for (n = 0; n <= 9; n += 3) {
             enc_opts oi, ob;
@@ -299,16 +300,20 @@ int main(void)
             int      same;
 
             enc_opts_default(&oi);
-            oi.tier       = 0;
-            oi.vbr_mode   = KAC_VBR_V;
-            oi.vbr_target = n;
-            ii            = enc_image(pcm, frames, ch, 44100, &oi, &li, &g);
+            oi.tier         = 0;
+            oi.vbr_mode     = KAC_VBR_V;
+            oi.vbr_target   = n;
+            oi.have_quality = 1;
+            oi.quality      = 0;
+            ii              = enc_image(pcm, frames, ch, 44100, &oi, &li, &g);
 
             enc_opts_default(&ob);
-            ob.tier     = 0;
-            ob.vbr_mode = KAC_VBR_V;
-            ob.vbr_psnr = kac_v_tier_psnr(n);
-            ib          = enc_image(pcm, frames, ch, 44100, &ob, &lb, &g);
+            ob.tier         = 0;
+            ob.vbr_mode     = KAC_VBR_V;
+            ob.vbr_psnr     = kac_v_tier_psnr(n);
+            ob.have_quality = 1;
+            ob.quality      = 0;
+            ib              = enc_image(pcm, frames, ch, 44100, &ob, &lb, &g);
 
             same = (ii != NULL && ib != NULL && li == lb && li > 0 && memcmp(ii, ib, li) == 0);
             expect(same, "-V %d and the calibration entry at %.3f dB differ (%zu vs %zu bytes)", n,
@@ -519,14 +524,13 @@ int main(void)
         }
     }
 
-    printf("\n== 2e. an estimated form is never re-emitted ==\n");
+    printf("\n== 2e. an estimated form still codes what it chooses ==\n");
     {
-        /* A measurement's bytes are re-emitted only at a level that does not
-         * refine the winner; a level that refines codes the block again. An
-         * estimated form writes no bytes, so re-emitting one would leave a
-         * one-byte block and the file would not close. Both sides of that
-         * boundary run here, on material the coded form wins. */
-        static const int levels[2] = {3, 7}; /* q3 refines, q7 does not */
+        /* The form estimate decides, and the block is then coded in that form.
+         * The decision has to survive the coding on both sides of the mid/side
+         * margin: both levels here estimate, and the fixture is one the coded
+         * form wins on. */
+        static const int levels[2] = {3, 4};
         int16_t         *cpcm      = (int16_t *)malloc((size_t)frames * ch * sizeof(int16_t));
         unsigned         a;
 

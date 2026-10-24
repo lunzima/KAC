@@ -140,18 +140,18 @@ describes the format rather than any one implementation:
   | `-q` | Beam width | Candidates | Beam lag | Channel form |
   |---:|---:|---:|---:|---|
   | 0 | 8 | 9 | whole slice | coded |
-  | 1 | 8 | 9 | whole slice | coded |
+  | 1 | 7 | 9 | whole slice | coded |
   | 2 | 6 | 9 | whole slice | coded |
-  | 3 | 5 | 8 | 8 | estimated over 8 rows |
+  | 3 | 5 | 8 | whole slice | estimated over 8 rows |
   | 4 | 4 | 8 | 4 | estimated over 4 rows |
-  | 5 | 3 | 7 | 3 | estimated over 2 rows |
-  | 6 | 2 | 6 | 2 | estimated over 1 row |
-  | 7 | 0 | 6 | - | coded, and the measurement is the emission |
-  | 8 | 0 | 5 | - | coded, and the measurement is the emission |
-  | 9 | 0 | 5 | - | none: the block is sent in the form it arrived in |
+  | 5 | 3 | 7 | 2 | estimated over 2 rows |
+  | 6 | 2 | 6 | 1 | estimated over 1 row |
+  | 7 | 0 | 6 | - | none: the block is sent in the form it arrived in |
+  | 8 | 0 | 5 | - | none: the block is sent in the form it arrived in |
+  | 9 | 0 | 4 | - | none: the block is sent in the form it arrived in |
   | 10 | 0 | - | - | none, and no row search either |
 
-  A beam width of 0 removes the beam, not the row search: levels 7 and 8 still
+  A beam width of 0 removes the beam, not the row search: levels 7, 8 and 9 still
   try candidate rows and take the nearest level per sample. Level 10 drops that
   too, leaving one row from the residual envelope and the nearest level
   everywhere. The command line stops at 9; level 10 is reachable through
@@ -159,6 +159,11 @@ describes the format rather than any one implementation:
   setting past level 0, so `-q` no longer changes any part of the search. A
   level is settled when the encoder is initialised, `kac_set_quality()` being
   the same setting for a caller.
+
+  A level does not choose the quality target: `-V`, `-b`, `--psnr` and `--abr`
+  do. A weaker level reaches the same target with more bits in less time, and
+  each level's reading of a tier carries its own measured offset, so the reading
+  tracks what that level actually delivers.
 
 A few common invocations:
 

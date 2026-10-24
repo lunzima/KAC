@@ -54,6 +54,7 @@ typedef struct {
     /* per-block control and readings */
     int      vbr_mode;
     int      vbr_n;
+    int      ladder; /* the target is a -V rung, so a level may aim below it */
     int32_t  vbr_target, vbr_psnr;
     int      abr_seeded; /* the first usable block set vbr_psnr */
     int      tier_lo, tier_hi;

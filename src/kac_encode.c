@@ -96,6 +96,7 @@ void kac_init(kac_t *restrict g)
      * overwrites the rung and opens the window. */
     g->vbr_mode   = KAC_VBR_V;
     g->vbr_n      = KAC_DEFAULT_V * 1000;
+    g->ladder     = 1;
     g->vbr_target = kac_v_rung_mdb[KAC_DEFAULT_V];
     g->tier_lo    = KAC_TIER_MIN;
     g->tier_hi    = KAC_TIER_MAX;
@@ -504,6 +505,7 @@ int kac_set_vbr(kac_t *restrict g, int mode, double target)
         if (g->vbr_psnr > KAC_AIM_MAX_MDB)
             g->vbr_psnr = KAC_AIM_MAX_MDB;
         g->vbr_target = mbps; /* milli-bit/sample */
+        g->ladder     = 0;
     } else {
         /* -V n: the index runs to KAC_V_NTERM thousandths with three decimals,
          * so -V 3.5 sits between rung 3 and rung 4 and -V 9.999 is the last
@@ -516,6 +518,7 @@ int kac_set_vbr(kac_t *restrict g, int mode, double target)
         g->vbr_n      = n;
         g->vbr_target = kac_v_tier_mdb1000(n);
         g->vbr_psnr   = g->vbr_target;
+        g->ladder     = 1;
     }
     g->vbr_mode = mode;
     g->tier     = KAC_TIER_AUTO;
@@ -552,6 +555,7 @@ int kac_set_vbr_target_psnr(kac_t *restrict g, double target_psnr)
     g->vbr_n      = (n <= KAC_V_NMAX) ? n * 1000 : KAC_V_NTERM;
     g->vbr_target = mdb;
     g->vbr_psnr   = mdb;
+    g->ladder     = 0; /* an explicit level, not a rung */
     g->tier       = KAC_TIER_AUTO;
     g->brate      = 0.0;
     g->tier_lo    = KAC_TIER_MIN; /* a per-block selector opens the window again */
@@ -721,17 +725,17 @@ int kac_init_params(kac_t *restrict g)
         } lv[KAC_QUALITY_MAX + 3] = {
             {8u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
              KAC_MEASURE_FIX_MDB},
-            {8u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
+            {7u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
              KAC_MEASURE_FIX_MDB},
             {6u, 1, KAC_FORM_SEP, KAC_LAG_WHOLE, KAC_PROBE_CAND, 0, KAC_SF_NEIGHBOR_PCT,
              KAC_MEASURE_FIX_MDB},
-            {5u, 1, 8, 8u, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {5u, 1, 8, KAC_LAG_WHOLE, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
             {4u, 1, 4, 4u, 8u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {3u, 1, 2, 3u, 7u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {2u, 1, 1, 2u, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_FREE, KAC_LAG_NONE, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
-            {0u, 1, KAC_FORM_FREE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {3u, 1, 2, 2u, 7u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {2u, 1, 1, 1u, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 6u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
             {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 5u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
+            {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 4u, 0, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
             {0u, 1, KAC_FORM_NONE, KAC_LAG_NONE, 0u, 1, KAC_SF_NEIGHBOR_PCT, KAC_MEASURE_FIX_MDB},
             {10u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 12u, 0, 50u, 700},
             {12u, 0, KAC_FORM_SEP, KAC_LAG_WHOLE, 16u, 0, 100u, 700},
@@ -1970,22 +1974,38 @@ static int est_reading(const kac_t *restrict g)
 
 static const int32_t *est_fix_table(const kac_t *restrict g)
 {
-    if (g->quality <= 2)
-        return kac_est_fixfull_mdb;
-    if (g->quality <= 4)
-        return kac_est_fixt12_mdb;
-    if (g->quality <= 7)
-        return kac_est_fixtop3_mdb;
-    return kac_est_fixone_mdb;
+    int q = g->quality;
+
+    if (q < 0 || q > KAC_QUALITY_MAX)
+        q = 0;
+    return kac_est_fix_mdb[q];
 }
 
 /* Correction applied to a reading: one figure for a real coding, per-tier
  * figures for an approximate pass. */
+/* Milli-dB this level aims below the run's target. Zero off the -V ladder. */
+static int32_t ladder_drop_mdb(const kac_t *restrict g)
+{
+    int q = g->quality;
+
+    if (!g->ladder || g->brute_level != 0u)
+        return 0;
+    if (q < 0)
+        q = 0;
+    if (q > KAC_QUALITY_MAX)
+        q = KAC_QUALITY_MAX;
+    return kac_level_aim_mdb[q];
+}
+
+/* Add the level's per-tier correction to a reading, so it predicts what a block
+ * actually delivers. A real coding at level 0 reads the cheapest search, and the
+ * gap to the emission is per tier, so it takes the table like any other level.
+ * The brute settings are past every level and carry their own scalar. */
 static int32_t measure_fix(const kac_t *restrict g, int tier)
 {
     int ti;
 
-    if (!est_reading(g))
+    if (g->brute_level != 0u)
         return g->measure_fix;
     ti = tier - KAC_TIER_MIN;
     if (ti < 0)
@@ -1995,8 +2015,9 @@ static int32_t measure_fix(const kac_t *restrict g, int tier)
     return est_fix_table(g)[ti];
 }
 
-/* Shortfall of an approximate reading against a real coding of the same form.
- * KAC_EST_FIX_AIM is subtracted because that slack concerns rung placement. */
+/* Offset carried by a real coding's reading at an estimated level: measure_fix()
+ * adds the level's per-tier correction to it, so the left/right baseline takes
+ * the same one before the two forms are compared. */
 static int32_t est_shortfall_mdb(const kac_t *restrict g, int tier, int estimated)
 {
     int ti;
@@ -2008,7 +2029,7 @@ static int32_t est_shortfall_mdb(const kac_t *restrict g, int tier, int estimate
         ti = 0;
     if (ti > KAC_TIER_MAX - KAC_TIER_MIN)
         ti = KAC_TIER_MAX - KAC_TIER_MIN;
-    return est_fix_table(g)[ti] - KAC_EST_FIX_AIM;
+    return est_fix_table(g)[ti];
 }
 
 /* Fold the weakest and strongest slice rankings into band and gate readings.
@@ -2223,10 +2244,11 @@ static void vbr_loop(kac_t *restrict g, uint64_t bytes, uint32_t pos0, unsigned 
             step = (int32_t)((int64_t)want * vbr_slope(g) / 10000);
     } else {
         int32_t cum  = vbr_level(g, (uint64_t)g->sse, pos0 + len);
-        int32_t over = cum - g->vbr_target;
+        int32_t tgt  = g->vbr_target - ladder_drop_mdb(g);
+        int32_t over = cum - tgt;
 
         if (over < -KAC_V_TOL_UP)
-            step = (g->vbr_target - cum) / KAC_V_STEP;
+            step = (tgt - cum) / KAC_V_STEP;
     }
 
     if (step != 0) {
@@ -2250,7 +2272,7 @@ static void vbr_loop(kac_t *restrict g, uint64_t bytes, uint32_t pos0, unsigned 
 static int measure_window(kac_t *restrict g, kac_t *restrict probe, uint8_t *restrict out,
                           unsigned len)
 {
-    int32_t aim = g->vbr_psnr;
+    int32_t aim = g->vbr_psnr - ladder_drop_mdb(g);
     int     t, lo, hi;
 
     for (t = KAC_TIER_MIN; t <= KAC_TIER_MAX; t++) {
@@ -2319,8 +2341,7 @@ static int measure_window(kac_t *restrict g, kac_t *restrict probe, uint8_t *res
  * form it arrived in; mid/side is measured only at the chosen tier and must
  * beat that reading by kac_ms_margin_mdb[tier]. Mono has no second form. */
 static int pick_form(kac_t *restrict g, kac_t *restrict probe, int tier, uint8_t *restrict out,
-                     unsigned len, int32_t lr, int *restrict ms, kac_reading *restrict form_rd,
-                     int *restrict form_measured)
+                     unsigned len, int32_t lr, int *restrict ms)
 {
     *ms = 0;
     if (g->channels != 2)
@@ -2348,9 +2369,6 @@ static int pick_form(kac_t *restrict g, kac_t *restrict probe, int tier, uint8_t
 
         if (rc != 0)
             return rc;
-        *form_rd = rd;
-        /* An estimated form writes no bytes and cannot be re-emitted. */
-        *form_measured = est_form ? 0 : 1;
         /* Bring an estimated left/right reading up to a real coding before
          * comparing, or the margin would be measured from a low baseline. Two
          * estimates are already on one scale. */
@@ -2409,15 +2427,13 @@ static int emit_block(kac_t *restrict g, kac_t *restrict trial, uint8_t *restric
 static int encode_block(kac_t *restrict g, uint8_t *restrict out, unsigned len,
                         size_t *restrict outbytes)
 {
-    int         tier;
-    int         ms = 0;
-    int         rc;
-    uint32_t    pos0;
-    uint32_t    k     = 0;
-    size_t      bytes = 0;
-    kac_t       probe; /* the tier measurement's working copy */
-    kac_reading form_rd       = {0};
-    int         form_measured = 0;
+    int      tier;
+    int      ms = 0;
+    int      rc;
+    uint32_t pos0;
+    uint32_t k     = 0;
+    size_t   bytes = 0;
+    kac_t    probe; /* the tier measurement's working copy */
 
     if (len == 0 || len > KAC_CHUNK_SAMPLES)
         return KAC_E_ARG;
@@ -2442,31 +2458,14 @@ static int encode_block(kac_t *restrict g, uint8_t *restrict out, unsigned len,
         if (rc != 0)
             return rc;
         abr_seed(g);
-        tier = vbr_pick(g, g->vbr_psnr);
+        tier = vbr_pick(g, g->vbr_psnr - ladder_drop_mdb(g));
         if (kac_use_tier(g, tier) != 0)
             return KAC_E_ARG;
-        rc =
-            pick_form(g, &probe, tier, out, len, g->tier_psnr[tier], &ms, &form_rd, &form_measured);
+        rc = pick_form(g, &probe, tier, out, len, g->tier_psnr[tier], &ms);
         if (rc != 0)
             return rc;
     }
-    if (ms && form_measured && g->form == KAC_FORM_FREE) {
-        /* Reuse the measured coding rather than coding the same block again. */
-        int64_t  sse0  = g->sse;
-        uint32_t clip0 = g->clip;
-
-        probe.pos = pos0 + len;
-        /* Define the unused emission area before the probe's state is adopted. */
-        memset(probe.alt_out, 0, sizeof probe.alt_out);
-        *g      = probe;
-        g->sse  = sse0 + form_rd.sse;
-        g->clip = clip0 + form_rd.clip;
-        out[0]  = (uint8_t)tier | KAC_BLOCK_MS;
-        bytes   = 1u + form_rd.bytes;
-        rc      = 0;
-    } else {
-        rc = emit_block(g, &probe, out, len, tier, ms, pos0, &bytes);
-    }
+    rc = emit_block(g, &probe, out, len, tier, ms, pos0, &bytes);
     if (rc != 0)
         return rc;
 

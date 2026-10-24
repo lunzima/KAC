@@ -61,16 +61,35 @@ typedef struct {
  * spread across tiers is not corrected. */
 #define KAC_MEASURE_FIX_MDB 650
 
-/* Per-tier correction for approximate readings, in milli-dB: measured gap to
- * a real coding plus rung slack, rounded to 50. One table per candidate rule;
- * the rules are listed at est_cand_limit(). */
-static const int32_t kac_est_fixfull_mdb[KAC_TIER_MAX] = {1500, 1500, 1500, 1500, 1500, 1500, 1500};
-static const int32_t kac_est_fixt12_mdb[KAC_TIER_MAX]  = {-800, 1700, 1850, 1650, 1650, 1650, 1650};
-static const int32_t kac_est_fixtop3_mdb[KAC_TIER_MAX] = {2350, 2300, 1650, 1650, 1650, 1650, 1650};
-static const int32_t kac_est_fixone_mdb[KAC_TIER_MAX]  = {5800, 4000, 3000, 2500, 2100, 1900, 1800};
+/* Per-tier correction for approximate readings, in milli-dB, rounded to 50: the
+ * offset that makes the reading equal the level a block actually delivers at
+ * that tier. One row per quality level, because the emission search differs by
+ * level and the offset is a property of that search. Measured block by block on
+ * the eight-track set: the reading and the emitted level of every block, per
+ * tier, and the mean gap. Level 0's readings come from the cheapest search and
+ * its row carries the gap to its own emission; level 10's estimate and emission
+ * are the same coding, so its row is zero. */
+static const int32_t kac_est_fix_mdb[KAC_QUALITY_MAX + 1][KAC_TIER_MAX] = {
+    {1400, 1650, 1050, 700, 550, 450, 300}, /* 0: real coding, cheapest search */
+    {1250, 950, 900, 650, 550, 450, 300},   /* 1 */
+    {1200, 950, 850, 650, 550, 450, 300},   /* 2 */
+    {1300, 1600, 1100, 700, 550, 450, 350}, /* 3 */
+    {700, 1050, 650, 350, 300, 250, 200},   /* 4 */
+    {2450, 1200, 350, 200, 150, 100, 100},  /* 5 */
+    {1700, 400, 50, 0, 0, 0, 0},            /* 6 */
+    {1800, 650, 150, 50, 0, 0, 0},          /* 7 */
+    {5500, 2550, 1550, 800, 450, 250, 250}, /* 8 */
+    {5650, 2200, 1400, 750, 450, 250, 250}, /* 9 */
+    {0, 0, 0, 0, 0, 0, 0},                  /* 10 */
+};
 
-/* Rung slack included in each entry above; form comparison subtracts it. */
-#define KAC_EST_FIX_AIM 1500
+/* Milli-dB a -V level aims below the rung. A weaker search would otherwise spend
+ * more bits to hold the same level; the ladder trades a little quality for speed
+ * and bits instead. The values are not a straight ramp: a level's delivered
+ * level at zero concession wobbles by 0.2 dB, so each entry compensates its own
+ * level to keep the delivered ladder descending. */
+static const int32_t kac_level_aim_mdb[KAC_QUALITY_MAX + 1] = {0,    450,  600, 350,  550, 650,
+                                                               1000, 1000, 950, 1300, 1400};
 
 /* Required mid/side advantage over left/right, in milli-dB, per tier (index 0
  * is unused). The margin grows with tier because the available advantage
@@ -83,7 +102,6 @@ static const int32_t kac_ms_margin_mdb[KAC_TIER_MAX + 1] = {0, 0, 0, 250, 500, 7
  * outside that range, at either end of the cost order. Nothing here changes how
  * the estimator runs, so a level's cost falls whenever its count does. */
 #define KAC_FORM_NONE (-2) /* no form search */
-#define KAC_FORM_FREE (-1) /* measured for real; the measurement is the emission */
 #define KAC_FORM_MAX_ROWS 16
 #define KAC_FORM_SEP 1000 /* measured for real, then the block is coded again */
 
