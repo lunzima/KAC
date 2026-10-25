@@ -1,0 +1,42 @@
+---
+# KAC - clang-format configuration
+# Matches the style already used across the tree: 4-space indent, function
+# braces on their own line, control-statement braces on the same line,
+# right-aligned pointers, consecutive declarations/assignments aligned.
+Language: Cpp
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Function definitions get their brace on the next line; control statements
+# keep it on the same line (Linux/K&R).
+BreakBeforeBraces: Linux
+
+# Never collapse bodies onto one line.
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+PointerAlignment: Right
+ReferenceAlignment: Pointer
+
+AlignConsecutiveDeclarations: Consecutive
+AlignConsecutiveAssignments: Consecutive
+AlignTrailingComments: true
+
+IndentCaseLabels: false
+SpaceAfterCStyleCast: false
+IndentPPDirectives: None
+
+# Source order is deliberate; never reorder includes.
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# Keep the generated quantiser tables laid out by the generator.
+DisableFormat: false
+...
