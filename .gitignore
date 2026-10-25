@@ -1,0 +1,20 @@
+# tmp/ is the reproducibility basis (WAV material, third-party builds).
+# It is referenced by path from the specification; it is not versioned.
+tmp/
+
+# refs/ holds third-party reference implementations -- the codec sources
+# (QOA / adpcm-xq / SEA) and, for the instrument side, spessasynth_core. None of
+# them are ours to vendor into this repository, and neither is the file that
+# pins their URLs, commits and SHA-256.
+refs/
+
+# A stray .c/.h landing at the root -- a copy run from the wrong working
+# directory -- was once committed by accident; these two lines make that
+# inexpressible rather than merely unlikely.
+/*.c
+/*.h
+
+# Not versioned, and never published: the internal notes and the session
+# instructions. The repository carries the delivered tree and nothing else.
+internal/
+CLAUDE.md
